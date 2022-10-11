@@ -1,0 +1,1 @@
+To image a new board, first TFTP boot the generated kernel+initramfs (Image) and DTB (oolong.dtb). Then scp the `Image`, `oolong.dtb`, and `image_emmc.sh` files onto the device, log in via SSH, and run `image_emmc.sh`. This will create the partition table and filesystems and copy the image and dtb into the `/boot` directories on the A and B partitions.

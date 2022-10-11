@@ -1,0 +1,72 @@
+Index: mender-3.3.0/installer/bootenv.go
+===================================================================
+--- mender-3.3.0.orig/installer/bootenv.go
++++ mender-3.3.0/installer/bootenv.go
+@@ -149,12 +149,67 @@ func (e *UBootEnv) probeSeparator() (str
+ 	return uBootEnvStandardSeparator, nil
+ }
+ 
++// setBootPartitionsAsReadWrite sets the MMC hardware boot partitions to be
++// writable. This is needed, for example, if the U-Boot environment is stored
++// to the boot partition so that mender can update the U-Boot environment
++// for upgrades, rollback, and commit. These partitions should be set back
++// to read-only via setBootPartitionsAsReadOnly after the writes are complete.
++func (e *UBootEnv) setBootPartitionsAsReadWrite() error {
++	// These device names would need to be generalized for upstreaming. These
++	// are the device names for the Nitrogen8M Mini SBC.
++	bootPartitions := []string{
++		"mmcblk0boot0",
++		"mmcblk0boot1",
++	}
++
++	for _, part := range bootPartitions {
++		devName := fmt.Sprintf("/sys/block/%s/force_ro", part)
++		if err := os.WriteFile(devName, []byte("0"), 0644); err != nil {
++			return err
++		}
++	}
++	return nil
++}
++
++// setBootPartitionsAsReadOnly sets the MMC hardware boot partitions to be
++// read-only. This is their default setting and should be restored after
++// they have been written (presumably calling setBootPartitionsAsReadWrite
++// prior to them being written).
++func (e *UBootEnv) setBootPartitionsAsReadOnly() error {
++	// These device names would need to be generalized for upstreaming. These
++	// are the device names for the Nitrogen8M Mini SBC.
++	bootPartitions := []string{
++		"mmcblk0boot0",
++		"mmcblk0boot1",
++	}
++
++	for _, part := range bootPartitions {
++		devName := fmt.Sprintf("/sys/block/%s/force_ro", part)
++		if err := os.WriteFile(devName, []byte("1"), 0644); err != nil {
++			return err
++		}
++	}
++	return nil
++}
++
+ // WriteEnv attempts to write the given 'BootVars' to the bootloader
+ // environment.
+ func (e *UBootEnv) WriteEnv(vars BootVars) error {
+ 	if err := e.checkEnvCanary(); err != nil {
+ 		return err
+ 	}
++	// Set the boot partitions to be writable to allow for
++	// environment updates
++	if err := e.setBootPartitionsAsReadWrite(); err != nil {
++		return err
++	}
++	// Restore the boot partitions to be read-only, even if we
++	// fail to update the environment variables
++	defer func() {
++		if err := e.setBootPartitionsAsReadOnly(); err != nil {
++			log.Errorf("Failed to set boot partitions back to read-only: %v", err)
++		}
++	}()
+ 	// Probe for the separator used by U-Boot. Newer versions support '=',
+ 	// and libubootenv only supports '=' as the separator, older versions
+ 	// only support ' '

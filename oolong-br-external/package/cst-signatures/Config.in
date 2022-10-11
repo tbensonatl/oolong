@@ -1,0 +1,4 @@
+config BR2_PACKAGE_CST_SIGNATURES
+    bool "Code Signing Tool (CST) Signatures"
+    help
+        Sign generated images using the code signing tool for HAB-enabled boards.

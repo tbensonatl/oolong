@@ -1,0 +1,9 @@
+# buildroot release tarballs
+/buildroot-*.tar.gz
+# unpacked buildroot directories
+/buildroot-*
+# devel scripts
+/scripts/uboot.txt
+/scripts/flash_bootloader.txt
+# Build directory
+/oolong-build

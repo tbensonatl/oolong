@@ -1,0 +1,2 @@
+source "$BR2_EXTERNAL_OOLONG_PATH/package/cst-signatures/Config.in"
+source "$BR2_EXTERNAL_OOLONG_PATH/package/gen-flash-bin/Config.in"

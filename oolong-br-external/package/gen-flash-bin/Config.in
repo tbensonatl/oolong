@@ -1,0 +1,4 @@
+config BR2_PACKAGE_GEN_FLASH_BIN
+    bool "Generate flash.bin"
+    help
+        Generate flash.bin with bootloader, DDR firmware, OP-TEE, etc.

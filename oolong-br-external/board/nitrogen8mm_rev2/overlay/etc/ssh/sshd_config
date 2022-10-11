@@ -1,0 +1,10 @@
+# Allow root logins with password. For production systems, this should
+# be disabled and keys or certificates used instead.
+PermitRootLogin yes
+
+# The default is to check both .ssh/authorized_keys and .ssh/authorized_keys2
+# but this is overridden so installations will only check .ssh/authorized_keys
+AuthorizedKeysFile      .ssh/authorized_keys
+
+# override default of no subsystems
+Subsystem       sftp    /usr/libexec/sftp-server
