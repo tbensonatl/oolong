@@ -1,0 +1,46 @@
+Index: buildroot-2022.08.1/package/optee-client/optee-client.hash
+===================================================================
+--- buildroot-2022.08.1.orig/package/optee-client/optee-client.hash
++++ buildroot-2022.08.1/package/optee-client/optee-client.hash
+@@ -1,4 +1,5 @@
+ # From https://github.com/OP-TEE/optee_client/archive/3.18.0/optee-client-3.18.0.tar.gz
+ sha256  ecc0f04fdd5398aa52fea50427fbd624f7f90274aec7bbf2cc8a5bd16758202b  optee-client-3.18.0.tar.gz
++sha256  bf62ceaac59e8a650abf7632e702b5929335f4974f3173f8c51900cb0f91660f  optee-client-3.17.0.tar.gz
+ # Locally computed
+ sha256  fda8385993f112d7ca61b88b54ba5b4cbeec7e43a0f9b317d5186703c1985e8f  LICENSE
+Index: buildroot-2022.08.1/package/optee-client/optee-client.mk
+===================================================================
+--- buildroot-2022.08.1.orig/package/optee-client/optee-client.mk
++++ buildroot-2022.08.1/package/optee-client/optee-client.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-OPTEE_CLIENT_VERSION = 3.18.0
++OPTEE_CLIENT_VERSION = 3.17.0
+ OPTEE_CLIENT_SITE = $(call github,OP-TEE,optee_client,$(OPTEE_CLIENT_VERSION))
+ OPTEE_CLIENT_LICENSE = BSD-2-Clause
+ OPTEE_CLIENT_LICENSE_FILES = LICENSE
+Index: buildroot-2022.08.1/package/optee-test/optee-test.hash
+===================================================================
+--- buildroot-2022.08.1.orig/package/optee-test/optee-test.hash
++++ buildroot-2022.08.1/package/optee-test/optee-test.hash
+@@ -1,4 +1,5 @@
+ # From https://github.com/OP-TEE/optee_test/archive/3.18.0/optee-test-3.18.0.tar.gz
+ sha256  cc36a9afb99bd299a3d3769ad634ab7d5cb0e27c84ad04e14c0ff593db0f3faf  optee-test-3.18.0.tar.gz
++sha256  5b0555b6fef926f8a0a471285cb4c264407c9be32461836240b3c412bf7933bb  optee-test-3.17.0.tar.gz
+ # Locally computed
+ sha256  6e6810981f0ddab9e0d44399d0700a15d9f760a3c2843cc866659c2074139ae7  LICENSE.md
+Index: buildroot-2022.08.1/package/optee-test/optee-test.mk
+===================================================================
+--- buildroot-2022.08.1.orig/package/optee-test/optee-test.mk
++++ buildroot-2022.08.1/package/optee-test/optee-test.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
+ 
+-OPTEE_TEST_VERSION = 3.18.0
++OPTEE_TEST_VERSION = 3.17.0
+ OPTEE_TEST_SITE = $(call github,OP-TEE,optee_test,$(OPTEE_TEST_VERSION))
+ OPTEE_TEST_LICENSE = GPL-2.0, BSD-2-Clause,
+ OPTEE_TEST_LICENSE_FILES = LICENSE.md
