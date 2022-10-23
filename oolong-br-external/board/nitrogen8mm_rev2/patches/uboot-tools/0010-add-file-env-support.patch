@@ -1,0 +1,110 @@
+Index: uboot-tools-2021.07/tools/env/fw_env.c
+===================================================================
+--- uboot-tools-2021.07.orig/tools/env/fw_env.c
++++ uboot-tools-2021.07/tools/env/fw_env.c
+@@ -64,6 +64,7 @@ struct envdev_s {
+ 	ulong env_sectors;		/* number of environment sectors */
+ 	uint8_t mtd_type;		/* type of the MTD device */
+ 	int is_ubi;			/* set if we use UBI volume */
++	int is_regular_file;	/* set if the device is a regular file */
+ };
+ 
+ static struct envdev_s envdevices[2] = {
+@@ -83,6 +84,7 @@ static int dev_current;
+ #define ENVSECTORS(i) envdevices[(i)].env_sectors
+ #define DEVTYPE(i)    envdevices[(i)].mtd_type
+ #define IS_UBI(i)     envdevices[(i)].is_ubi
++#define IS_REGULAR_FILE(i)	envdevices[(i)].is_regular_file
+ 
+ #define CUR_ENVSIZE ENVSIZE(dev_current)
+ 
+@@ -1212,6 +1214,24 @@ static int flash_write(int fd_current, i
+ 		return ubi_write(fd_target, environment.image, CUR_ENVSIZE);
+ 	}
+ 
++	if (IS_REGULAR_FILE(dev_target)) {
++		const ssize_t n = write(fd_target, environment.image, CUR_ENVSIZE);
++		if (n < 0) {
++#ifdef DEBUG
++			fprintf(stderr, "Failed to write %s: errno=%d\n", DEVNAME(dev_target), errno);
++#endif
++			return -1;
++		}
++		if (n != CUR_ENVSIZE) {
++#ifdef DEBUG
++			fprintf(stderr, "Unexpected write size on %s: expected %d bytes, wrote %zd\n",
++				DEVNAME(dev_target), CUR_ENVSIZE, n);
++#endif
++			return -1;
++		}
++		return 0;
++	}
++
+ 	rc = flash_write_buf(dev_target, fd_target, environment.image,
+ 			     CUR_ENVSIZE);
+ 	if (rc < 0)
+@@ -1242,6 +1262,24 @@ static int flash_read(int fd)
+ 		return ubi_read(fd, environment.image, CUR_ENVSIZE);
+ 	}
+ 
++	if (IS_REGULAR_FILE(dev_current)) {
++		const ssize_t n = read(fd, environment.image, CUR_ENVSIZE);
++		if (n < 0) {
++#ifdef DEBUG
++			fprintf(stderr, "Failed to read %s: %d\n", DEVNAME(dev_current), errno);
++#endif
++			return -1;
++		}
++		if (n < CUR_ENVSIZE) {
++#ifdef DEBUG
++			fprintf(stderr, "Short read on %s: expected %d bytes, got %zd\n",
++				DEVNAME(dev_current), CUR_ENVSIZE, n);
++#endif
++			return -1;
++		}
++		return 0;
++	}
++
+ 	rc = flash_read_buf(dev_current, fd, environment.image, CUR_ENVSIZE,
+ 			    DEVOFFSET(dev_current));
+ 	if (rc != CUR_ENVSIZE)
+@@ -1509,6 +1547,9 @@ int fw_env_open(struct env_opts *opts)
+ 			   DEVTYPE(!dev_current) == MTD_ABSENT &&
+ 			   IS_UBI(dev_current) == IS_UBI(!dev_current)) {
+ 			environment.flag_scheme = FLAG_INCREMENTAL;
++		} else if (IS_REGULAR_FILE(dev_current) &&
++				IS_REGULAR_FILE(!dev_current)) {
++			environment.flag_scheme = FLAG_INCREMENTAL;
+ 		} else {
+ 			fprintf(stderr, "Incompatible flash types!\n");
+ 			ret = -EINVAL;
+@@ -1543,6 +1584,9 @@ int fw_env_open(struct env_opts *opts)
+ 			dev_current = 0;
+ 		} else {
+ 			switch (environment.flag_scheme) {
++			case FLAG_NONE:
++				dev_current = 0;
++				break;
+ 			case FLAG_BOOLEAN:
+ 				if (flag0 == ENV_REDUND_ACTIVE &&
+ 				    flag1 == ENV_REDUND_OBSOLETE) {
+@@ -1643,6 +1687,10 @@ static int check_device_config(int dev)
+ 		goto err;
+ 	}
+ 
++	if (S_ISREG(st.st_mode)) {
++		IS_REGULAR_FILE(dev) = 1;
++	}
++
+ 	if (IS_UBI(dev)) {
+ 		rc = ioctl(fd, UBI_IOCEBISMAP, &lnum);
+ 		if (rc < 0) {
+@@ -1650,6 +1698,8 @@ static int check_device_config(int dev)
+ 				DEVNAME(dev));
+ 			goto err;
+ 		}
++	} else if (IS_REGULAR_FILE(dev)) {
++		/* No additional information needed for regular files */
+ 	} else if (S_ISCHR(st.st_mode)) {
+ 		struct mtd_info_user mtdinfo;
+ 		rc = ioctl(fd, MEMGETINFO, &mtdinfo);

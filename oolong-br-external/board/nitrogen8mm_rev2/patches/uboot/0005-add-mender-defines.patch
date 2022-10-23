@@ -2,7 +2,7 @@ Index: uboot-custom/include/config_mender_defines.h
 ===================================================================
 --- /dev/null
 +++ uboot-custom/include/config_mender_defines.h
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,37 @@
 +/*
 + * Adapted from https://github.com/mendersoftware/meta-mender/blob/master/meta-mender-core/recipes-bsp/u-boot/u-boot-mender.inc
 + *
@@ -38,6 +38,5 @@ Index: uboot-custom/include/config_mender_defines.h
 +#define MENDER_UBOOT_POST_SETUP_COMMANDS ""
 +
 +#define CONFIG_BOOTCOUNT_LIMIT
-+#define CONFIG_BOOTCOUNT_ENV
 +
 +#endif /* !HEADER_CONFIG_MENDER_DEFINES_H */

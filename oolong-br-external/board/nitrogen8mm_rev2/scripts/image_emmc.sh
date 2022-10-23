@@ -58,6 +58,13 @@ function image_partitions() {
     /sbin/mke2fs -L DATA -F ${EMMC_DEV_BLK}p4 > /dev/null
     echo "Done"
 
+    mkdir -p recovery
+    mount ${EMMC_DEV_BLK}p1 recovery
+    # Need the mender directory before first boot so that U-Boot can write the
+    # initial mender environment files
+    mkdir -p recovery/mender
+    umount ${EMMC_DEV_BLK}p1
+
     mkdir -p partA partB
 
     mount ${EMMC_DEV_BLK}p2 partA

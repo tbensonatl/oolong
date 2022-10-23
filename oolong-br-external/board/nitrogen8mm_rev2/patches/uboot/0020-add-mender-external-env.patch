@@ -1,0 +1,454 @@
+Index: uboot-custom/common/autoboot.c
+===================================================================
+--- uboot-custom.orig/common/autoboot.c
++++ uboot-custom/common/autoboot.c
+@@ -16,6 +16,7 @@
+ #include <log.h>
+ #include <malloc.h>
+ #include <memalign.h>
++#include <mender_env_ext.h>
+ #include <menu.h>
+ #include <post.h>
+ #include <time.h>
+@@ -442,6 +443,10 @@ const char *bootdelay_process(void)
+ 	char *s;
+ 	int bootdelay;
+ 
++#if !defined(CONFIG_SPL_BUILD) && defined(CONFIG_MENDER_ENV_EXT)
++    mender_env_ext_import();
++#endif /* !defined(CONFIG_SPL_BUILD) && defined(CONFIG_MENDER_ENV_EXT) */
++
+ 	bootcount_inc();
+ 
+ 	s = env_get("bootdelay");
+Index: uboot-custom/drivers/Kconfig
+===================================================================
+--- uboot-custom.orig/drivers/Kconfig
++++ uboot-custom/drivers/Kconfig
+@@ -58,6 +58,8 @@ source "drivers/mailbox/Kconfig"
+ 
+ source "drivers/memory/Kconfig"
+ 
++source "drivers/mender/Kconfig"
++
+ source "drivers/misc/Kconfig"
+ 
+ source "drivers/mmc/Kconfig"
+Index: uboot-custom/drivers/Makefile
+===================================================================
+--- uboot-custom.orig/drivers/Makefile
++++ uboot-custom/drivers/Makefile
+@@ -98,6 +98,7 @@ obj-$(CONFIG_QE) += qe/
+ obj-$(CONFIG_U_QE) += qe/
+ obj-y += mailbox/
+ obj-y += memory/
++obj-y += mender/
+ obj-y += mtd/
+ obj-y += mux/
+ obj-y += pwm/
+Index: uboot-custom/drivers/mender/Kconfig
+===================================================================
+--- /dev/null
++++ uboot-custom/drivers/mender/Kconfig
+@@ -0,0 +1,77 @@
++#
++# Mender filesystem environment storage
++#
++
++menuconfig MENDER_ENV_EXT
++	bool "Enable support for ext filesystem storage of mender variables"
++	depends on FS_EXT4
++	select EXT4_WRITE
++	help
++	  Enables storage of environment variables relevant to mender in
++	  an ext4 filesystem
++
++if MENDER_ENV_EXT
++
++config MENDER_ENV_EXT_FILENAME
++    string "Mender variable storage filename"
++    default "/mender/uboot-env.bin"
++    help
++        Filename in which the mender environment is stored
++
++config MENDER_ENV_EXT_ADDR
++    hex "RAM address used for mender ext environment"
++    default 0x50000000
++    help
++      Set the address used for reading and writing mender ext environment.
++
++config MENDER_ENV_EXT_INTERFACE
++    string "Interface on which to find mender environment ext filesystem"
++    default "mmc"
++    help
++      Set the interface to use when locating the filesystem to use for the
++      mender external environment file
++
++config MENDER_ENV_EXT_DEVPART
++    string "Device and partition of the mender environment ext filesystem"
++    default "0:1"
++    help
++      Set the partition to use when locating the filesystem to use for the
++      mender external environment file
++
++config MENDER_ENV_EXT_REDUNDANT
++	bool "Enable support for redundant ext filesystem storage of mender variables"
++	help
++	  Enables redundant storage of environment variables relevant to mender in
++	  an ext4 filesystem
++
++config MENDER_ENV_EXT_REDUNDANT_FILENAME
++    string "Mender redundant variable storage filename"
++    default "/mender/uboot-env-redundant.bin"
++    depends on MENDER_ENV_EXT_REDUNDANT
++    help
++        Filename in which the redundant mender environment is stored
++
++config MENDER_ENV_EXT_REDUNDANT_ADDR
++    hex "RAM address used for redundant mender ext environment"
++    default 0x50010000
++    depends on MENDER_ENV_EXT_REDUNDANT
++    help
++      Set the address used for reading and writing redundant mender ext environment.
++
++config MENDER_ENV_EXT_REDUNDANT_INTERFACE
++    string "Interface on which to find redundant mender environment ext filesystem"
++    default "mmc"
++    depends on MENDER_ENV_EXT_REDUNDANT
++    help
++      Set the interface to use when locating the filesystem to use for the
++      redundant mender external environment file
++
++config MENDER_ENV_EXT_REDUNDANT_DEVPART
++    string "Device and partition of the redundant mender environment ext filesystem"
++    default "0:1"
++    depends on MENDER_ENV_EXT_REDUNDANT
++    help
++      Set the partition to use when locating the filesystem to use for the
++      redundant mender external environment file
++
++endif
+Index: uboot-custom/drivers/mender/Makefile
+===================================================================
+--- /dev/null
++++ uboot-custom/drivers/mender/Makefile
+@@ -0,0 +1,3 @@
++# SPDX-License-Identifier: GPL-2.0+
++
++obj-$(CONFIG_MENDER_ENV_EXT)	+= mender_env_ext.o
+Index: uboot-custom/drivers/mender/mender_env_ext.c
+===================================================================
+--- /dev/null
++++ uboot-custom/drivers/mender/mender_env_ext.c
+@@ -0,0 +1,293 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Copyright (c) 2022 Thomas Benson <tbensongit@gmail.com>
++ */
++
++#include <bootcount.h>
++#include <u-boot/crc.h>
++#include <env.h>
++#include <env_internal.h>
++#include <log.h>
++#include <fs.h>
++#include <mapmem.h>
++#include <search.h>
++
++static char * const mender_vars[] = {
++    "bootcount",
++    "mender_boot_part",
++    "mender_boot_part_hex",
++    "mender_check_saveenv_canary",
++    "mender_saveenv_canary",
++    "upgrade_available"
++};
++
++static struct {
++    // flags from loaded environment
++    unsigned char env_flags;
++    // 0 is primary environment, 1 is redundant
++    int loaded_env_ind;
++    int primary_load_ok;
++    int redundant_load_ok;
++} s_load_state = {
++    .env_flags = 0,
++    .loaded_env_ind = 0,
++    .primary_load_ok = 0,
++    .redundant_load_ok = 0
++};
++
++static int write_mender_ext_env(const char *iface, const char *devpart, const char *filename)
++{
++    if (fs_set_blk_dev(iface, devpart, FS_TYPE_EXT)) {
++        log_err("Error selecting interface %s %s for mender environment export\n",
++            iface, devpart);
++        return -1;
++    }
++
++    loff_t nwritten = 0;
++	const int ret = fs_write(filename, CONFIG_MENDER_ENV_EXT_ADDR, 0,
++        CONFIG_ENV_SIZE, &nwritten);
++	if (ret != 0) {
++		log_err("Error writing mender ext environment to %s\n", filename);
++        return -1;
++    }
++    if (nwritten != CONFIG_ENV_SIZE) {
++        log_err("Incorrect write size writing %s (wrote %lld, expected %d)\n",
++            filename, nwritten, CONFIG_ENV_SIZE);
++        return -1;
++    }
++
++    return 0;
++}
++
++void bootcount_store(ulong bootcount)
++{
++    env_t *ep = NULL;
++	int ret = 0;
++
++	const int upgrade_available = env_get_ulong("upgrade_available", 10, 0);
++    const int set_mender_saveenv_canary = env_get("mender_saveenv_canary") == NULL ? 1 : 0;
++
++    log_info("upgrade_available=%d set_mender_saveenv_canary=%d\n", upgrade_available, set_mender_saveenv_canary);
++
++	/* Only update bootcount during upgrade process */
++	if (!upgrade_available && !set_mender_saveenv_canary) {
++		return;
++    }
++
++    if (!upgrade_available) {
++        bootcount = 0;
++    }
++
++    env_set_ulong("bootcount", bootcount);
++
++    if (set_mender_saveenv_canary) {
++        env_set_ulong("mender_saveenv_canary", 1);
++    }
++
++    ep = (env_t *) map_sysmem(CONFIG_MENDER_ENV_EXT_ADDR, sizeof(env_t));
++    if (ep == NULL) {
++        log_info("Failed to map %zu bytes to 0x%x for mender external environment\n",
++            sizeof(env_t), CONFIG_MENDER_ENV_EXT_ADDR);
++        return;
++    }
++
++    char *data = ep->data;
++    const ssize_t env_size = hexport_r(&env_htab, '\0', H_MATCH_KEY | H_MATCH_IDENT, &data, ENV_SIZE,
++        sizeof(mender_vars)/sizeof(mender_vars[0]), mender_vars);
++    if (env_size < 0) {
++        log_info("Cannot export environment: errno = %d\n", errno);
++        goto cleanup;
++    }
++
++    s_load_state.env_flags++;
++    ep->flags = s_load_state.env_flags;
++    ep->crc = crc32(0, ep->data, ENV_SIZE);
++
++#ifdef CONFIG_MENDER_ENV_EXT_REDUNDANT
++    // Toggle writes between primary and redundant environments. In
++    // the case that we failed to load an environment, update that
++    // environment. On first boot, we will write both environments.
++    if (s_load_state.loaded_env_ind == 1 || ! s_load_state.primary_load_ok) {
++        log_info("Writing %s [flags=%u]\n", CONFIG_MENDER_ENV_EXT_FILENAME, ep->flags);
++        ret = write_mender_ext_env(CONFIG_MENDER_ENV_EXT_INTERFACE,
++            CONFIG_MENDER_ENV_EXT_DEVPART, CONFIG_MENDER_ENV_EXT_FILENAME);
++        if (ret != 0) {
++            goto cleanup;
++        }
++        log_info("Successfully wrote %s\n", CONFIG_MENDER_ENV_EXT_FILENAME);
++    }
++
++    if (s_load_state.loaded_env_ind == 0 || ! s_load_state.redundant_load_ok) {
++        log_info("Writing %s [flags=%u]\n", CONFIG_MENDER_ENV_EXT_REDUNDANT_FILENAME, ep->flags);
++        ret = write_mender_ext_env(CONFIG_MENDER_ENV_EXT_REDUNDANT_INTERFACE,
++            CONFIG_MENDER_ENV_EXT_REDUNDANT_DEVPART, CONFIG_MENDER_ENV_EXT_REDUNDANT_FILENAME);
++        if (ret != 0) {
++            goto cleanup;
++        }
++        log_info("Successfully wrote %s\n", CONFIG_MENDER_ENV_EXT_REDUNDANT_FILENAME);
++    }
++#else
++    // We do not have a redundant environment, so always write to the
++    // primary environment
++    log_info("Writing %s\n", CONFIG_MENDER_ENV_EXT_FILENAME);
++    ret = write_mender_ext_env(CONFIG_MENDER_ENV_EXT_INTERFACE,
++        CONFIG_MENDER_ENV_EXT_DEVPART, CONFIG_MENDER_ENV_EXT_FILENAME);
++    if (ret != 0) {
++        goto cleanup;
++    }
++    log_info("Successfully wrote %s\n", CONFIG_MENDER_ENV_EXT_FILENAME);
++#endif // CONFIG_MENDER_ENV_EXT_REDUNDANT
++
++cleanup:
++    if (ep) {
++        unmap_sysmem(ep);
++    }
++}
++
++ulong bootcount_load(void)
++{
++	int upgrade_available = env_get_ulong("upgrade_available", 10, 0);
++	ulong val = 0;
++
++	if (upgrade_available)
++		val = env_get_ulong("bootcount", 10, 0);
++
++	return val;
++}
++
++int mender_env_ext_import(void)
++{
++    int retval = 0;
++    int rc = 0;
++    loff_t len_read = 0;
++    int crc1_ok = 0;
++    env_t *ep1 = NULL;
++#ifdef CONFIG_MENDER_ENV_EXT_REDUNDANT
++    int crc2_ok = 0;
++    env_t *ep2 = NULL;
++#endif // CONFIG_MENDER_ENV_EXT_REDUNDANT
++    // The valid environment from which we will read
++    env_t *ep = NULL;
++
++    do {
++        if (fs_set_blk_dev(CONFIG_MENDER_ENV_EXT_INTERFACE,
++                CONFIG_MENDER_ENV_EXT_DEVPART, FS_TYPE_EXT)) {
++            log_info("Error selecting device for primary mender environment import\n");
++            break;
++        }
++
++        rc = fs_read(CONFIG_MENDER_ENV_EXT_FILENAME, CONFIG_MENDER_ENV_EXT_ADDR,
++                0, CONFIG_ENV_SIZE, &len_read);
++        if (rc != 0 || len_read != CONFIG_ENV_SIZE) {
++            log_info("Error reading primary mender external environment\n");
++            break;
++        }
++
++        s_load_state.primary_load_ok = 1;
++
++        ep1 = (env_t *) map_sysmem(CONFIG_MENDER_ENV_EXT_ADDR, sizeof(env_t));
++        if (ep1 == NULL) {
++            log_info("Failed to map %d bytes to 0x%x for primary mender environment\n",
++                CONFIG_ENV_SIZE, CONFIG_MENDER_ENV_EXT_ADDR);
++            break;
++        }
++
++        if (crc32(0, ep1->data, ENV_SIZE) != ep1->crc) {
++            log_info("CRC check failed for primary mender external environment\n");
++            break;
++        }
++
++        crc1_ok = 1;
++    } while (0);
++
++#ifdef CONFIG_MENDER_ENV_EXT_REDUNDANT
++    do {
++        if (fs_set_blk_dev(CONFIG_MENDER_ENV_EXT_REDUNDANT_INTERFACE,
++                CONFIG_MENDER_ENV_EXT_REDUNDANT_DEVPART, FS_TYPE_EXT)) {
++            log_info("Error selecting device for redundant mender environment import\n");
++            break;
++        }
++
++        rc = fs_read(CONFIG_MENDER_ENV_EXT_REDUNDANT_FILENAME, CONFIG_MENDER_ENV_EXT_REDUNDANT_ADDR,
++                0, CONFIG_ENV_SIZE, &len_read);
++        if (rc != 0 || len_read != CONFIG_ENV_SIZE) {
++            log_info("Error reading redundant mender external environment\n");
++            break;
++        }
++
++        s_load_state.redundant_load_ok = 1;
++
++        ep2 = (env_t *) map_sysmem(CONFIG_MENDER_ENV_EXT_REDUNDANT_ADDR, sizeof(env_t));
++        if (ep2 == NULL) {
++            log_info("Failed to map %d bytes to 0x%x for redundant mender environment\n",
++                CONFIG_ENV_SIZE, CONFIG_MENDER_ENV_EXT_REDUNDANT_ADDR);
++            break;
++        }
++
++        if (crc32(0, ep2->data, ENV_SIZE) != ep2->crc) {
++            log_info("CRC check failed for redundant mender external environment\n");
++            break;
++        }
++
++        crc2_ok = 1;
++    } while (0);
++
++    if (! crc1_ok && ! crc2_ok) {
++        log_info("CRC errors on both mender external environments\n");
++        retval = -1;
++        goto cleanup;
++    } else if (crc1_ok && ! crc2_ok) {
++        log_info("Importing primary mender external environment\n");
++    } else if (! crc1_ok && crc2_ok) {
++        log_info("Importing redundant mender external environment\n");
++        s_load_state.loaded_env_ind = 1;
++    } else {
++        // Both CRCs are okay. Load the newest environment. The first
++        // two cases handle rollover.
++        if (ep1->flags == 255 && ep2->flags == 0) {
++            s_load_state.loaded_env_ind = 1;
++        } else if (ep2->flags == 255 && ep1->flags == 0) {
++            // s_loaded_env_ind is already 0
++        } else if (ep1->flags > ep2->flags) {
++            // s_loaded_env_ind is already 0
++        } else if (ep2->flags > ep1->flags) {
++            s_load_state.loaded_env_ind = 1;
++        } else {
++            // s_loaded_env_ind is already 0
++        }
++    }
++    ep = (s_load_state.loaded_env_ind == 0) ? ep1 : ep2;
++#else
++    if (! crc1_ok) {
++        retval = -1;
++        goto cleanup;
++    }
++    ep = ep1;
++#endif // CONFIG_MENDER_ENV_EXT_REDUNDANT
++
++    s_load_state.env_flags = ep->flags;
++
++    rc = himport_r(&env_htab, (char *)ep->data, ENV_SIZE, '\0', H_NOCLEAR, 0,
++            sizeof(mender_vars)/sizeof(mender_vars[0]), mender_vars);
++    /* himport_r returns 0 on error */
++    if (rc == 0) {
++        log_info("Failed to import mender external environment variables\n");
++        retval = -1;
++        goto cleanup;
++    }
++
++    log_info("Successfully imported mender external environment\n");
++
++cleanup:
++
++    if (ep1) {
++        unmap_sysmem(ep1);
++    }
++#ifdef CONFIG_MENDER_ENV_EXT_REDUNDANT
++    if (ep2) {
++        unmap_sysmem(ep2);
++    }
++#endif // CONFIG_MENDER_ENV_EXT_REDUNDANT
++
++    return retval;
++}
+Index: uboot-custom/include/mender_env_ext.h
+===================================================================
+--- /dev/null
++++ uboot-custom/include/mender_env_ext.h
+@@ -0,0 +1,13 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * (C) Copyright 2022
++ * Thomas Benson, tbensongit@gmail.com
++ */
++#ifndef _MENDER_ENV_EXT_H__
++#define _MENDER_ENV_EXT_H__
++
++#ifdef CONFIG_MENDER_ENV_EXT
++int mender_env_ext_import(void);
++#endif
++
++#endif /* _MENDER_ENV_EXT_H__ */

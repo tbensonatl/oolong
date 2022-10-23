@@ -16,7 +16,7 @@ new file mode 100644
 index 0000000000..3377ab0a1b
 --- /dev/null
 +++ b/include/config_mender.h
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,89 @@
 +/*
 +  Copyright 2017 Northern.tech AS
 +
@@ -43,17 +43,8 @@ index 0000000000..3377ab0a1b
 +
 +#include <config_mender_defines.h>
 +
-+#ifdef CONFIG_ENV_IS_NOWHERE
-+# error A CONFIG_ENV_IS_IN_<storage-type> define is required for Mender to work. For standard Mender setups this should be CONFIG_ENV_IS_IN_MMC for HD/SSD/MMC/SD storage setup, and CONFIG_ENV_IS_IN_UBI for Flash/UBI storage.
-+#endif
-+
 +#ifndef CONFIG_BOOTCOUNT_LIMIT
 +# error CONFIG_BOOTCOUNT_LIMIT is required for Mender to work. Make sure that: 1) All the instructions at https://docs.mender.io/system-updates-yocto-project/board-integration/bootloader-support/u-boot have been followed. 2) All required layers are included in bblayers.conf, including any board specific layers such as meta-mender-<board>
-+#endif
-+
-+/* Currently Mender needs bootcount to reside in environment. */
-+#ifndef CONFIG_BOOTCOUNT_ENV
-+# error CONFIG_BOOTCOUNT_ENV is required for Mender to work. Make sure that: 1) All the instructions at https://docs.mender.io/system-updates-yocto-project/board-integration/bootloader-support/u-boot have been followed. 2) All required layers are included in bblayers.conf, including any board specific layers such as meta-mender-<board>
 +#endif
 +
 +#ifndef CONFIG_SYS_REDUNDAND_ENVIRONMENT
@@ -120,7 +111,7 @@ new file mode 100644
 index 0000000000..261775afd5
 --- /dev/null
 +++ b/include/env_mender.h
-@@ -0,0 +1,155 @@
+@@ -0,0 +1,151 @@
 +/*
 +  Copyright 2017 Northern.tech AS
 +
@@ -195,10 +186,6 @@ index 0000000000..261775afd5
 +    "mender_check_saveenv_canary=1\0"                                   \
 +                                                                        \
 +    "mender_setup="                                                     \
-+    "if test \"${mender_saveenv_canary}\" != \"1\"; then "              \
-+    "setenv mender_saveenv_canary 1; "                                  \
-+    "saveenv; "                                                         \
-+    "fi; "                                                              \
 +    "if test \"${mender_pre_setup_commands}\" != \"\"; "                \
 +    "then "                                                             \
 +    "run mender_pre_setup_commands; "                                   \
