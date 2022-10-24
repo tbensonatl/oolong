@@ -8,6 +8,7 @@ EMMC_DEV_BLK=/dev/${EMMC_BLK}
 
 IMAGE_NAME=Image
 DTB_NAME=oolong.dtb
+SIGNED_BOOTLOADER=signed_flash.bin
 
 function partition_emmc() {
     echo -n "Partitioning eMMC... "
@@ -109,3 +110,12 @@ fi
 partition_emmc
 sync
 image_partitions
+
+if [ -f ${SIGNED_BOOTLOADER} ] ; then
+    echo -n "Flashing bootloader ${SIGNED_BOOTLOADER}..."
+    echo 0 > /sys/block/mmcblk0boot0/force_ro
+    dd if=${SIGNED_BOOTLOADER} of=/dev/mmcblk0boot0 bs=1K seek=33
+    sync
+    echo 1 > /sys/block/mmcblk0boot0/force_ro
+    echo "Done"
+fi
