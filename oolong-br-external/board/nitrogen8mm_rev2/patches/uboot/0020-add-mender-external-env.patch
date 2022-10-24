@@ -10,7 +10,7 @@ Index: uboot-custom/common/autoboot.c
  #include <menu.h>
  #include <post.h>
  #include <time.h>
-@@ -442,6 +443,10 @@ const char *bootdelay_process(void)
+@@ -442,13 +443,16 @@ const char *bootdelay_process(void)
  	char *s;
  	int bootdelay;
  
@@ -21,6 +21,13 @@ Index: uboot-custom/common/autoboot.c
  	bootcount_inc();
  
  	s = env_get("bootdelay");
+ 	bootdelay = s ? (int)simple_strtol(s, NULL, 10) : CONFIG_BOOTDELAY;
+ 	if (is_usb_boot()) {
+ 		bootdelay = 4;
+-		env_set_default("!Started from usb", 0);
+ 	}
+ 
+ 	if (IS_ENABLED(CONFIG_OF_CONTROL))
 Index: uboot-custom/drivers/Kconfig
 ===================================================================
 --- uboot-custom.orig/drivers/Kconfig
