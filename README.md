@@ -12,7 +12,7 @@ The license for newly developed scripts, configuration files, and code unrelated
 
 # Building a System Image
 
-On a recent Linux distribution with basic build support (gcc, make, etc.), the following should be sufficient to build the project:
+On a recent Linux distribution with basic build support (gcc, make, etc.) and `curl` already installed, the following should be sufficient to build the project:
 
 ```
 git clone https://github.com/tbensonatl/oolong

@@ -6,7 +6,7 @@ GEN_FLASH_BIN_INSTALL_STAGING = NO
 GEN_FLASH_BIN_INSTALL_TARGET = NO
 GEN_FLASH_BIN_INSTALL_IMAGES = YES
 
-GEN_FLASH_BIN_DEPENDENCIES += uboot arm-trusted-firmware firmware-imx optee-os host-imx-mkimage
+GEN_FLASH_BIN_DEPENDENCIES += uboot arm-trusted-firmware firmware-imx optee-os host-imx-mkimage host-dtc
 
 define GEN_FLASH_BIN_BUILD_CMDS
     rm -rf $(@D)/workdir

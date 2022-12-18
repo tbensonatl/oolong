@@ -9,10 +9,6 @@ The following was manually adapted from https://github.com/mendersoftware/meta-m
 
     0005-add-mender-defines.patch
 
-The following adjusts the RAM top address to support loading OP-TEE:
-
-    0010-account-for-optee-loadaddr.patch
-
 The following adds support for storing the mender-relevant environment variables
 in an external environment on an ext4 filesystem:
 
